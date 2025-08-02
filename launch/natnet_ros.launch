@@ -25,6 +25,8 @@
   <arg name="pub_individual_marker" default="false"/>
   <!-- To publish all the unlabeled markers as point cloud -->
   <arg name="pub_pointcloud" default="false"/>
+  <!-- To publish skeleton data -->
+  <arg name="pub_skeleton" default="false"/>
 
   <!-- CONFIG FILE -->
   <arg name="conf_file" default="initiate.yaml"/>
@@ -54,6 +56,7 @@
     <param name="pub_rigid_body_marker" value="$(arg pub_rigid_body_marker)" type="bool"/>
     <param name="pub_individual_marker" value="$(arg pub_individual_marker)" type="bool"/>
     <param name="pub_pointcloud" value="$(arg pub_pointcloud)" type="bool"/>
+    <param name="pub_skeleton" value="$(arg pub_skeleton)" type="bool"/>
   </node>
 
   

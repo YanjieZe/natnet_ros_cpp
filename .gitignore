@@ -5,3 +5,4 @@ deps/NatNetSDK/*
 whiteboard/*
 config/*
 !config/initiate.yaml
+NatNet_SDK_4.3_ubuntu

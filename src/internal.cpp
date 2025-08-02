@@ -140,6 +140,46 @@ void Internal::Info(NatNetClient* g_pClient, ros::NodeHandle &n)
                     }
                 }
             }
+            else if (pDataDefs->arrDataDescriptions[i].type == Descriptor_Skeleton)
+            {
+                // Skeleton
+                sSkeletonDescription* pSK = pDataDefs->arrDataDescriptions[i].Data.SkeletonDescription;
+                ROS_INFO("Skeleton found : %s", pSK->szName);
+                ROS_INFO_COND(rosparam.log_internals, "Skeleton ID : %d", pSK->skeletonID);
+                ROS_INFO_COND(rosparam.log_internals, "Skeleton Bone count : %d", pSK->nRigidBodies);
+                
+                // Creating publishers for skeleton bones if skeleton publishing is enabled
+                std::string skeleton_name(pSK->szName);
+                
+                // Sanitize skeleton name for ROS topic compatibility
+                std::replace(skeleton_name.begin(), skeleton_name.end(), ' ', '_');
+                std::replace(skeleton_name.begin(), skeleton_name.end(), '-', '_');
+                
+                if(rosparam.pub_skeleton)
+                {
+                    this->ListSkeletons[pSK->skeletonID] = skeleton_name;
+                    // Create publisher for each bone in the skeleton
+                    for(int boneIdx = 0; boneIdx < pSK->nRigidBodies; boneIdx++)
+                    {
+                        sRigidBodyDescription* pBone = &pSK->RigidBodies[boneIdx];
+                        std::string bone_name = std::string(pBone->szName);
+                        
+                        // Sanitize names for ROS topic compatibility
+                        std::replace(bone_name.begin(), bone_name.end(), ' ', '_');
+                        std::replace(bone_name.begin(), bone_name.end(), '-', '_');
+                        
+                        std::string bone_topic = skeleton_name + "/" + bone_name + "/pose";
+                        
+                        // Store bone ID to name mapping for runtime lookup
+                        this->ListSkeletonBones[pBone->ID] = bone_name;
+                        
+                        this->SkeletonPub[bone_topic] = n.advertise<geometry_msgs::PoseStamped>(bone_topic, 50);
+                        ROS_INFO_COND(rosparam.log_internals, "  Bone [%d] : %s", pBone->ID, pBone->szName);
+                        if(pBone->parentID != -1)
+                            ROS_INFO_COND(rosparam.log_internals, "  Parent ID : %d", pBone->parentID);
+                    }
+                }
+            }
             else if (pDataDefs->arrDataDescriptions[i].type == Descriptor_Camera)
             {
                 // Camera
@@ -214,6 +254,17 @@ void Internal::DataHandler(sFrameOfMocapData* data, void* pUserData, Internal &i
         ROS_INFO_COND(internal.rosparam.log_frames, "%3.2f\t%3.2f\t%3.2f\t%3.2f\t%3.2f\t%3.2f\t%3.2f",
             data->RigidBodies[i].x, data->RigidBodies[i].y, data->RigidBodies[i].z,
             data->RigidBodies[i].qx, data->RigidBodies[i].qy, data->RigidBodies[i].qz, data->RigidBodies[i].qw);
+        }
+
+    // Skeletons
+    ROS_INFO_COND(internal.rosparam.log_frames, "Skeletons [Count=%d]", data->nSkeletons);
+    for(i=0; i < data->nSkeletons; i++)
+    {
+        if(internal.rosparam.pub_skeleton)
+        {
+            PubSkeletonData(data->Skeletons[i], internal);
+        }
+        ROS_INFO_COND(internal.rosparam.log_frames, "Skeleton [ID=%d Bones=%d]", data->Skeletons[i].skeletonID, data->Skeletons[i].nRigidBodies);
         }
 
     // Markers
@@ -351,4 +402,78 @@ void Internal::PubRigidbodyMarker(sMarker &data, Internal &internal)
 
     internal.RigidbodyMarkerPub[std::to_string(modelID)+std::to_string(markerID)].publish(msgMarkerPose);
 
+}
+
+void Internal::PubSkeletonData(sSkeletonData &data, Internal &internal)
+{
+    // Check if we have a skeleton name for this ID
+    if (internal.ListSkeletons.find(data.skeletonID) == internal.ListSkeletons.end())
+    {
+        ROS_WARN_ONCE("Skeleton ID %d not found in skeleton list", data.skeletonID);
+        return;
+    }
+
+    std::string skeleton_name = internal.ListSkeletons[data.skeletonID];
+    
+    // Static TF broadcaster - only one instance needed
+    static tf2_ros::TransformBroadcaster tfSkeleton;
+    
+    // Check if skeleton has valid rigid body data
+    if(data.RigidBodyData == nullptr || data.nRigidBodies <= 0)
+    {
+        ROS_WARN_ONCE("Skeleton %d has no valid rigid body data", data.skeletonID);
+        return;
+    }
+    
+    // Publish data for each bone in the skeleton
+    for(int boneIdx = 0; boneIdx < data.nRigidBodies; boneIdx++)
+    {
+        sRigidBodyData* bone = &data.RigidBodyData[boneIdx];
+        
+        // Check if we have a name for this bone ID
+        if(internal.ListSkeletonBones.find(bone->ID) == internal.ListSkeletonBones.end())
+        {
+            ROS_WARN_ONCE("Bone ID %d not found in skeleton bone list", bone->ID);
+            continue;
+        }
+        
+        std::string bone_name = internal.ListSkeletonBones[bone->ID];
+        std::string bone_topic = skeleton_name + "/" + bone_name + "/pose";
+        
+        // Check if publisher exists for this bone
+        if(internal.SkeletonPub.find(bone_topic) != internal.SkeletonPub.end())
+        {
+            // Create and publish PoseStamped message
+            geometry_msgs::PoseStamped msgBonePose;
+            msgBonePose.header.frame_id = internal.rosparam.globalFrame;
+            msgBonePose.header.stamp = ros::Time::now();
+            msgBonePose.pose.position.x = bone->x;
+            msgBonePose.pose.position.y = bone->y;
+            msgBonePose.pose.position.z = bone->z;
+            msgBonePose.pose.orientation.x = bone->qx;
+            msgBonePose.pose.orientation.y = bone->qy;
+            msgBonePose.pose.orientation.z = bone->qz;
+            msgBonePose.pose.orientation.w = bone->qw;
+            
+            internal.SkeletonPub[bone_topic].publish(msgBonePose);
+            
+            // Create TF frame for bone
+            geometry_msgs::TransformStamped msgTFBone;
+            msgTFBone.header.stamp = ros::Time::now();
+            msgTFBone.header.frame_id = internal.rosparam.globalFrame;
+            msgTFBone.child_frame_id = skeleton_name + "_" + bone_name;
+            msgTFBone.transform.translation.x = bone->x;
+            msgTFBone.transform.translation.y = bone->y;
+            msgTFBone.transform.translation.z = bone->z;
+            msgTFBone.transform.rotation.x = bone->qx;
+            msgTFBone.transform.rotation.y = bone->qy;
+            msgTFBone.transform.rotation.z = bone->qz;
+            msgTFBone.transform.rotation.w = bone->qw;
+            tfSkeleton.sendTransform(msgTFBone);
+        }
+        else
+        {
+            ROS_WARN_ONCE("Publisher not found for bone topic: %s", bone_topic.c_str());
+        }
+    }
 }

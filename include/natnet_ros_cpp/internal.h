@@ -5,6 +5,7 @@
 #include <NatNetClient.h>
 
 #include <map>
+#include <algorithm>
 
 #include <ros/publisher.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -23,7 +24,8 @@ public:
     // Keeping count on the assets
     // NOTE: It will be only counted at the start. It is not advised to add rigid body after starting the node 
     std::map<int32_t,std::string> ListRigidBodies; 
-    std::map<double,std::string> ListSkeletons;
+    std::map<int32_t,std::string> ListSkeletons;
+    std::map<int32_t,std::string> ListSkeletonBones; // Maps bone ID to bone name
     std::map<double,std::string> ListForcePlates;
     std::map<double,std::string> ListDevices;
 
@@ -72,6 +74,9 @@ public:
 
     // Publish Point cloud from the marker
     void PubPointCloud(sMarker &data, Internal &internal);
+
+    // Publish skeleton data 
+    void PubSkeletonData(sSkeletonData &data, Internal &internal);
 
 };
 

@@ -69,6 +69,10 @@ roslaunch natnet_ros_cpp gui_natnet_ros.launch
 ```
 ![alt text](https://github.com/L2S-lab/natnet_ros_cpp/blob/main/img/ui-1.png)
 
+To enable human skeleton publishing:
+```bash
+ roslaunch natnet_ros_cpp natnet_ros.launch pub_skeleton:=true
+ ```
 
 #### Difficult way
 
